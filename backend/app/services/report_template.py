@@ -68,11 +68,44 @@ class ReportTemplateService(BaseModuleService):
                 "query_results": query_results,
             })
 
+        # 用已关联的透视配置恢复行列和网格（生成时实时计算，跟随轴改名）
+        from app.services.pivot_table import PivotTableService
+        pivot_svc = PivotTableService()
+        pivot_sections = []
+        for config_id in template.get("关联透视配置", []):
+            result = pivot_svc.compute_pivot(int(config_id))
+            if "error" in result:
+                pivot_sections.append({"config_id": config_id, "error": result["error"]})
+                continue
+            pivot_sections.append({
+                "config_id": config_id,
+                "配置名称": result.get("config_name"),
+                "事实表": result.get("fact_table"),
+                "行维度": result.get("row_dimension"),
+                "列维度": result.get("column_dimension"),
+                "轴格式": result.get("axis_format"),
+                "grid": result.get("grid"),
+                "row_totals": result.get("row_totals"),
+            })
+        if not pivot_sections and template.get("透视表结果"):
+            # 兼容旧快照：无关联配置时保留共享时注入的结果
+            snapshot = template["透视表结果"]
+            pivot_sections.append({
+                "配置名称": snapshot.get("config_name"),
+                "事实表": snapshot.get("fact_table"),
+                "行维度": snapshot.get("row_dimension"),
+                "列维度": snapshot.get("column_dimension"),
+                "grid": snapshot.get("grid"),
+                "row_totals": snapshot.get("row_totals"),
+                "source": "共享快照",
+            })
+
         return {
             "report_template": template.get("模板名称"),
             "period": template.get("报告周期"),
             "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
             "format": template.get("输出格式", "HTML"),
             "sections": sections,
+            "pivot_sections": pivot_sections,
             "total_metrics": len(sections),
         }

@@ -167,6 +167,43 @@ def compute_pivot(config_id: int):
     return svc.compute_pivot(config_id)
 
 
+@router.post("/pivot-table/{config_id}/migrate")
+def migrate_pivot_config(config_id: int):
+    """把单份存量透视配置的行轴/列轴迁移为规范维度引用"""
+    svc = PivotTableService()
+    return svc.migrate_config(config_id)
+
+
+@router.get("/pivot-table/export-legacy")
+def export_pivot_legacy():
+    """导出旧格式记录（旧名称、数据源指标、原模型字段），供旧版创建接口重放"""
+    svc = PivotTableService()
+    return svc.export_legacy_records()
+
+
+@router.get("/dimension-model/{model_id}/axes")
+def get_dimension_axes(model_id: int):
+    """查询模型内每个轴的稳定身份、现名和旧名"""
+    svc = DimensionModelService()
+    result = svc.get_axes(model_id)
+    if result is None:
+        return {"error": f"维度模型 {model_id} 不存在"}
+    return result
+
+
+@router.post("/dimension-model/{model_id}/rename-axis")
+def rename_dimension_axis(
+    model_id: int,
+    new_name: str,
+    axis_id: str | None = None,
+    name: str | None = None,
+):
+    """轴改名：稳定身份不变，旧名留档"""
+    svc = DimensionModelService()
+    axis, message = svc.rename_axis(model_id, new_name, axis_id=axis_id, name=name)
+    return {"ok": axis is not None, "message": message, "axis": axis}
+
+
 @router.post("/pivot-table/{config_id}/share-to-report")
 def share_pivot_to_report(config_id: int, report_template_id: int):
     """将透视表共享到报告模板"""

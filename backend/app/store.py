@@ -28,6 +28,9 @@ class Store:
         self._anomaly_records: list[dict[str, Any]] = []
         # Recalc history
         self._recalc_history: list[dict[str, Any]] = []
+        # 维度轴注册表：axis_id -> 轴记录（稳定身份、现名、旧名、所属模型）
+        self._dimension_axes: dict[str, dict[str, Any]] = {}
+        self._axis_seq = 0
         # Lock for thread safety
         self._lock = threading.Lock()
 
@@ -79,6 +82,46 @@ class Store:
 
     def find_by_status(self, module: str, status: str) -> list[dict[str, Any]]:
         return [row for row in self.rows(module) if row.get("status") == status]
+
+    # ── 维度轴注册表 ──
+
+    def register_axis(self, model_id: int, name: str) -> dict[str, Any]:
+        """为维度模型登记一个轴，返回带稳定身份的记录。"""
+        self._axis_seq += 1
+        axis = {
+            "axis_id": f"ax_{self._axis_seq}",
+            "model_id": model_id,
+            "current_name": name,
+            "former_names": [],
+        }
+        self._dimension_axes[axis["axis_id"]] = axis
+        return axis
+
+    def axes_for_model(self, model_id: int) -> list[dict[str, Any]]:
+        """按登记顺序返回模型内全部轴。"""
+        return [axis for axis in self._dimension_axes.values()
+                if int(axis.get("model_id", 0)) == model_id]
+
+    def find_axis(self, axis_id: str) -> dict[str, Any] | None:
+        return self._dimension_axes.get(axis_id)
+
+    def rename_axis(self, axis_id: str, new_name: str) -> dict[str, Any] | None:
+        """改名：现名进入旧名列表，稳定身份不变。"""
+        axis = self._dimension_axes.get(axis_id)
+        if axis is None:
+            return None
+        old_name = axis["current_name"]
+        if old_name != new_name:
+            axis.setdefault("former_names", []).append(old_name)
+            axis["current_name"] = new_name
+        return axis
+
+    def match_axes(self, model_id: int, name: str) -> list[dict[str, Any]]:
+        """只在指定事实表模型内按现名或旧名匹配轴，返回全部候选。"""
+        return [
+            axis for axis in self.axes_for_model(model_id)
+            if axis.get("current_name") == name or name in axis.get("former_names", [])
+        ]
 
     # ── Query journal ──
 
